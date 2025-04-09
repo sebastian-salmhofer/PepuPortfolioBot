@@ -3,24 +3,26 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Get bot token from environment
+# Get bot token from environment variable
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
-# Store user wallet state in memory
+# In-memory store to remember a user's last used wallet
 user_last_wallet = {}
 
-# API endpoint
+# Your API endpoint to fetch portfolio data
 API_URL = "https://pepu-portfolio-tracker.onrender.com/portfolio?wallet="
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id in user_last_wallet:
         await update.message.reply_text(
-            f"Welcome back! Checking last wallet: {user_last_wallet[user_id]}...")
+            f"Welcome back! Checking last wallet: {user_last_wallet[user_id]}..."
+        )
         await check_wallet(update, context, user_last_wallet[user_id])
     else:
         await update.message.reply_text(
-            "Welcome to the Pepu Portfolio Bot!\nPlease enter a wallet address (0x...).")
+            "Welcome to the Pepu Portfolio Bot!\nPlease enter a wallet address (0x...)"
+        )
 
 async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, wallet: str):
     if not wallet.startswith("0x") or len(wallet) != 42:
