@@ -5,7 +5,7 @@ import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Configure logging to see debug information in Render
+# Configure logging to see debug information
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.DEBUG
 )
@@ -23,7 +23,6 @@ def sanitize_html(text):
     """
     if not text:
         return text
-    # Remove both opening and closing <font> tags
     return re.sub(r'</?font[^>]*>', '', text)
 
 def format_amount(n):
@@ -113,14 +112,11 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
                     continue
                 token_link = f"https://www.geckoterminal.com/pepe-unchained/pools/{token.get('contract')}"
                 msg += f"<b><a href=\"{token_link}\">{token.get('name')} ({token.get('symbol')})</a></b>\n"
-                icon = token.get("icon_url")
-                if icon:
-                    msg += f"Icon: <a href=\"{icon}\">View</a>\n"
+                # Removed the icon link line; no longer displaying icons inline.
                 msg += f"Amount: {format_amount(token.get('amount'))}\n"
                 msg += f"Price: {format_price(token.get('price_usd'))}\n"
                 msg += f"Total: {format_usd(token.get('total_usd'))}\n"
                 if token.get("warning"):
-                    # Sanitize the warning text to remove any <font> tags
                     warning_text = sanitize_html(token.get("warning"))
                     msg += f"<i>⚠ {warning_text}</i>\n"
                 msg += "\n"
