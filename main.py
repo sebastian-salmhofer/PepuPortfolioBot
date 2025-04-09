@@ -4,7 +4,7 @@ import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Configure logging to print debug information
+# Configure logging to see debug information
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.DEBUG
 )
@@ -66,11 +66,11 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
         api_url = API_URL + wallet
         logger.debug("Requesting URL: %s", api_url)
         response = requests.get(api_url, timeout=10)
-        response.raise_for_status()  # Raise an error for non-200 responses
+        response.raise_for_status()  # Raise error for non-200 responses
         data = response.json()
         logger.debug("Received data: %s", data)
 
-        # Build a simple HTML-formatted message (expand this as needed)
+        # Build the HTML message
         msg = f"<b>Total Portfolio Value:</b> {format_usd(data.get('total_value_usd'))}\n\n"
         
         # Wallet PEPU section
@@ -94,7 +94,7 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
         msg += f"Price: {format_price(rewards.get('price_usd'))}\n"
         msg += f"Total: {format_usd(rewards.get('total_usd'))}\n\n"
         
-        # Other tokens section (if any)
+        # Other tokens section
         tokens = data.get("tokens", [])
         if tokens:
             msg += "<b>Other Tokens:</b>\n"
@@ -109,8 +109,9 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
                 msg += f"Amount: {format_amount(token.get('amount'))}\n"
                 msg += f"Price: {format_price(token.get('price_usd'))}\n"
                 msg += f"Total: {format_usd(token.get('total_usd'))}\n"
+                # Remove the unsupported <font> tag: use only <i> for italic
                 if token.get("warning"):
-                    msg += f"<i><font color=\"red\">⚠ {token.get('warning')}</font></i>\n"
+                    msg += f"<i>⚠ {token.get('warning')}</i>\n"
                 msg += "\n"
 
         await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
