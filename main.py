@@ -96,4 +96,21 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
                 msg += "\n"
 
         await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
-    except Exception as e
+    except Exception as e:
+        await update.message.reply_text("Error fetching data.", parse_mode="HTML")
+        print(e)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    wallet = update.message.text.strip()
+    user_last_wallet[user_id] = wallet
+    await check_wallet(update, context, wallet)
+
+def main():
+    app = ApplicationBuilder().token(os.environ.get("BOT_TOKEN")).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
