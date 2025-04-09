@@ -1,10 +1,11 @@
 import os
+import re
 import requests
 import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Configure logging to see debug information
+# Configure logging to see debug information in Render
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.DEBUG
 )
@@ -15,6 +16,15 @@ user_last_wallet = {}
 
 # Your API endpoint
 API_URL = "https://pepu-portfolio-tracker.onrender.com/portfolio?wallet="
+
+def sanitize_html(text):
+    """
+    Remove unsupported HTML tags (<font> tags) from text.
+    """
+    if not text:
+        return text
+    # Remove both opening and closing <font> tags
+    return re.sub(r'</?font[^>]*>', '', text)
 
 def format_amount(n):
     try:
@@ -109,9 +119,10 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
                 msg += f"Amount: {format_amount(token.get('amount'))}\n"
                 msg += f"Price: {format_price(token.get('price_usd'))}\n"
                 msg += f"Total: {format_usd(token.get('total_usd'))}\n"
-                # Remove the unsupported <font> tag: use only <i> for italic
                 if token.get("warning"):
-                    msg += f"<i>⚠ {token.get('warning')}</i>\n"
+                    # Sanitize the warning text to remove any <font> tags
+                    warning_text = sanitize_html(token.get("warning"))
+                    msg += f"<i>⚠ {warning_text}</i>\n"
                 msg += "\n"
 
         await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
