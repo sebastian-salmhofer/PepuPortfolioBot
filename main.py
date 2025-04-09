@@ -1,16 +1,20 @@
 import os
 import requests
 import asyncio
+import nest_asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Get bot token from environment
+# Allow nested use of asyncio.run / event loop modifications.
+nest_asyncio.apply()
+
+# Get bot token from environment variable
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
-# Store user wallet state in memory
+# In-memory store for each user's last wallet
 user_last_wallet = {}
 
-# API endpoint
+# Your API endpoint to fetch portfolio data
 API_URL = "https://pepu-portfolio-tracker.onrender.com/portfolio?wallet="
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -37,7 +41,6 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
         data = response.json()
 
         msg = f"Total Portfolio Value: ${data['total_value_usd']}\n\n"
-
         def section(label, item):
             return (
                 f"{label}\n"
@@ -69,19 +72,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await check_wallet(update, context, wallet)
 
 async def main():
+    # Build the application
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Register command and message handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    
-    # Delete any previously set webhook to avoid conflict.
+
+    # Delete any webhook to avoid conflicts (especially if switching from webhook mode)
     await app.bot.delete_webhook(drop_pending_updates=True)
-    print("Deleted webhook. Starting polling...")
-    
-    await app.run_polling()
+    print("Deleted webhook.")
+
+    # Initialize and start the application (this does NOT block)
+    await app.initialize()
+    await app.start()
+
+    # Start polling in the background
+    asyncio.create_task(app.updater.start_polling())
+    print("Polling started.")
+
+    # Wait forever (this keeps the application alive without closing the loop)
+    await asyncio.Future()
 
 if __name__ == "__main__":
-    # Instead of asyncio.run() (which complains if an event loop is already running)
-    # we get the running loop, schedule our main task, and call run_forever().
     loop = asyncio.get_event_loop()
     loop.create_task(main())
     loop.run_forever()
