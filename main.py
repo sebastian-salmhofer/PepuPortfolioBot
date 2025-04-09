@@ -1,71 +1,74 @@
 import os
 import requests
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-API_BASE_URL = "https://pepu-portfolio-tracker.onrender.com/portfolio?wallet="
+# Get bot token from environment
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+# Store user wallet state in memory
 user_last_wallet = {}
+
+# API endpoint
+API_URL = "https://pepu-portfolio-tracker.onrender.com/portfolio?wallet="
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id in user_last_wallet:
         await update.message.reply_text(
-            f"Welcome back! Checking last wallet: {user_last_wallet[user_id]}...
-"
-            f"Type /wallet <address> to check another one."
-        )
-        await fetch_portfolio(update, context, user_last_wallet[user_id])
+            f"Welcome back! Checking last wallet: {user_last_wallet[user_id]}...")
+        await check_wallet(update, context, user_last_wallet[user_id])
     else:
-        await update.message.reply_text("Welcome! Send a wallet address with /wallet <address> to get started.")
+        await update.message.reply_text(
+            "Welcome to the Pepu Portfolio Bot!\nPlease enter a wallet address (0x...).")
 
-async def wallet(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 1:
-        await update.message.reply_text("Please provide a wallet address like this:\n/wallet 0x123...")
+async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, wallet: str):
+    if not wallet.startswith("0x") or len(wallet) != 42:
+        await update.message.reply_text("Invalid wallet address. Please try again.")
         return
 
-    address = context.args[0]
-    if not address.startswith("0x") or len(address) != 42:
-        await update.message.reply_text("That doesn't look like a valid wallet address.")
-        return
+    await update.message.reply_text("Fetching data, please wait...")
 
-    user_last_wallet[update.effective_user.id] = address
-    await fetch_portfolio(update, context, address)
-
-async def fetch_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE, address: str):
-    await update.message.reply_text("Fetching portfolio, please wait...")
     try:
-        res = requests.get(API_BASE_URL + address)
-        data = res.json()
+        response = requests.get(API_URL + wallet)
+        data = response.json()
 
-        total = data.get("total_value_usd", 0)
-        msg = f"Total Portfolio Value: ${total:,.2f}\n"
+        msg = f"Total Portfolio Value: ${data['total_value_usd']}\n\n"
 
-        def token_line(label, item):
-            amt = item['amount']
-            price = item['price_usd']
-            value = item['total_usd']
-            return f"{label}:\n  Amount: {amt:,.4f}\n  Price: ${price:.6f}\n  Total: ${value:,.2f}\n"
+        def section(label, item):
+            return (
+                f"{label}\n"
+                f"- Amount: {round(item['amount'], 4)}\n"
+                f"- Value: ${round(item['total_usd'], 2)}\n\n"
+            )
 
-        msg += token_line("Wallet PEPU", data["native_pepu"])
-        msg += token_line("Staked PEPU", data["staked_pepu"])
-        msg += token_line("Unclaimed Rewards", data["unclaimed_rewards"])
+        msg += section("Wallet PEPU", data["native_pepu"])
+        msg += section("Staked PEPU", data["staked_pepu"])
+        msg += section("Unclaimed Rewards", data["unclaimed_rewards"])
+
+        tokens = data["tokens"]
+        if tokens:
+            msg += "Other Tokens:\n"
+            for t in tokens:
+                if t["amount"] < 1:
+                    continue
+                msg += f"- {t['name']} ({t['symbol']}): ${round(t['total_usd'], 2)}\n"
 
         await update.message.reply_text(msg)
     except Exception as e:
-        print("Error:", e)
-        await update.message.reply_text("Failed to fetch portfolio. Please try again later.")
+        await update.message.reply_text("Error fetching data.")
+        print(e)
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    wallet = update.message.text.strip()
+    user_last_wallet[user_id] = wallet
+    await check_wallet(update, context, wallet)
 
 def main():
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not token:
-        print("Error: TELEGRAM_BOT_TOKEN environment variable not set.")
-        return
-
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("wallet", wallet))
-
-    print("Bot is running...")
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.run_polling()
 
 if __name__ == "__main__":
