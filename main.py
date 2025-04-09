@@ -1,15 +1,16 @@
 import os
 import requests
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Get bot token from environment variable
+# Get bot token from environment
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
-# In-memory store to remember a user's last used wallet
+# Store user wallet state in memory
 user_last_wallet = {}
 
-# Your API endpoint to fetch portfolio data
+# API endpoint
 API_URL = "https://pepu-portfolio-tracker.onrender.com/portfolio?wallet="
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -21,7 +22,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await check_wallet(update, context, user_last_wallet[user_id])
     else:
         await update.message.reply_text(
-            "Welcome to the Pepu Portfolio Bot!\nPlease enter a wallet address (0x...)"
+            "Welcome to the Pepu Portfolio Bot!\nPlease enter a wallet address (0x...)."
         )
 
 async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, wallet: str):
@@ -67,11 +68,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_last_wallet[user_id] = wallet
     await check_wallet(update, context, wallet)
 
-def main():
+async def main():
+    # Build the application instance
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    # Register handlers for the bot
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.run_polling()
+    
+    # Delete any previously set webhook (drop pending updates) to avoid conflicts.
+    await app.bot.delete_webhook(drop_pending_updates=True)
+    print("Deleted webhook. Starting polling...")
+    
+    # Run the bot using long polling.
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
