@@ -69,19 +69,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await check_wallet(update, context, wallet)
 
 async def main():
-    # Build the application instance
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    
-    # Register handlers for the bot
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Delete any previously set webhook (drop pending updates) to avoid conflicts.
+    # Delete any previously set webhook to avoid conflict.
     await app.bot.delete_webhook(drop_pending_updates=True)
     print("Deleted webhook. Starting polling...")
     
-    # Run the bot using long polling.
     await app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Instead of asyncio.run() (which complains if an event loop is already running)
+    # we get the running loop, schedule our main task, and call run_forever().
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+    loop.run_forever()
