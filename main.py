@@ -19,7 +19,7 @@ API_URL = "https://pepu-portfolio-tracker.onrender.com/portfolio?wallet="
 
 def sanitize_html(text):
     """
-    Remove unsupported HTML tags (<font> tags) from text.
+    Remove unsupported HTML tags (e.g. <font>) from text.
     """
     if not text:
         return text
@@ -74,41 +74,49 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
     try:
         api_url = API_URL + wallet
         logger.debug("Requesting URL: %s", api_url)
-        response = requests.get(api_url, timeout=10)
-        response.raise_for_status()
+        # Increase timeout to 30 seconds for larger wallets
+        response = requests.get(api_url, timeout=30)
+        response.raise_for_status()  # Raise an error for non-200 responses
         data = response.json()
         logger.debug("Received data: %s", data)
 
         # Build the summary message for the main portfolio data
         summary_msg = f"<b>Total Portfolio Value:</b> {format_usd(data.get('total_value_usd'))}\n\n"
+        
         native = data.get("native_pepu", {})
         summary_msg += f"<b>Wallet PEPU</b>\n"
         summary_msg += f"Amount: {format_amount(native.get('amount'))}\n"
         summary_msg += f"Price: {format_price(native.get('price_usd'))}\n"
         summary_msg += f"Total: {format_usd(native.get('total_usd'))}\n\n"
+        
         staked = data.get("staked_pepu", {})
         summary_msg += f"<b>Staked PEPU</b>\n"
         summary_msg += f"Amount: {format_amount(staked.get('amount'))}\n"
         summary_msg += f"Price: {format_price(staked.get('price_usd'))}\n"
         summary_msg += f"Total: {format_usd(staked.get('total_usd'))}\n\n"
+        
         rewards = data.get("unclaimed_rewards", {})
         summary_msg += f"<b>Unclaimed Rewards</b>\n"
         summary_msg += f"Amount: {format_amount(rewards.get('amount'))}\n"
         summary_msg += f"Price: {format_price(rewards.get('price_usd'))}\n"
         summary_msg += f"Total: {format_usd(rewards.get('total_usd'))}\n\n"
         
+        # Send the summary message
         await update.message.reply_text(summary_msg, parse_mode="HTML", disable_web_page_preview=True)
         
-        # Process and sort tokens (only include tokens with an amount >= 1)
+        # Process tokens: filter tokens with amount >= 1 and sort descending by total_usd
         tokens = [t for t in data.get("tokens", []) if t.get("amount", 0) >= 1]
-        # Sort tokens by 'total_usd' in descending order
         tokens = sorted(tokens, key=lambda t: float(t.get("total_usd", 0)), reverse=True)
         
         if tokens:
             chunk_size = 20  # 20 tokens per message
             for i in range(0, len(tokens), chunk_size):
                 chunk = tokens[i:i+chunk_size]
-                tokens_msg = f"<b>Other Tokens (Tokens {i+1} to {i+len(chunk)}):</b>\n"
+                # Only add the header on the first chunk
+                if i == 0:
+                    tokens_msg = "<b>Other Tokens:</b>\n"
+                else:
+                    tokens_msg = ""
                 for token in chunk:
                     token_link = f"https://www.geckoterminal.com/pepe-unchained/pools/{token.get('contract')}"
                     tokens_msg += f"<b><a href=\"{token_link}\">{token.get('name')} ({token.get('symbol')})</a></b>\n"
