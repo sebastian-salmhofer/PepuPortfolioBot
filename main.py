@@ -12,11 +12,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global variables for ad triggering
+# Global advertisement configuration
 portfolio_request_count = 0
 next_ad_trigger = random.randint(3, 5)
 
-# Advertisement messages (HTML formatted; bold part as specified)
 ad_messages = [
     "<b>🛒 Real holders rock the merch.</b>\nSupport the project & rep PBTC in style:\n🔗 pepe-bitcoin.com/store",
     "<b>🔥 You checked your portfolio. Now dress like a degen.</b>\nPBTC merch store open 24/7 👕\n🔗 pepe-bitcoin.com/store",
@@ -30,19 +29,13 @@ ad_messages = [
     "<b>👕 From chart watchers to merch rockers — all PBTC holders welcome.</b>\nPepeBitcoin merch store:\n🔗 pepe-bitcoin.com/store"
 ]
 
-# Footer text to add on the last tokens message
 footer_text = "<b>Check out your portfolio on the web + explore exclusive merch</b> 🛍️\n🔗 pepe-bitcoin.com"
-
-# In-memory cache for user's last wallet address
-user_last_wallet = {}
 
 # Your API endpoint
 API_URL = "https://pepu-portfolio-tracker.onrender.com/portfolio?wallet="
 
 def sanitize_html(text):
-    """
-    Remove unsupported HTML tags (e.g. <font>) from text.
-    """
+    """Remove unsupported HTML tags (e.g. <font> tags) from text."""
     if not text:
         return text
     return re.sub(r'</?font[^>]*>', '', text)
@@ -94,7 +87,7 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
 
     await update.message.reply_text("Fetching data, please wait...", parse_mode="HTML")
 
-    # Increment and possibly send an ad message every 3-5 portfolio requests
+    # Increment portfolio request count and send an ad message every 3-5 requests
     portfolio_request_count += 1
     if portfolio_request_count >= next_ad_trigger:
         ad_message = random.choice(ad_messages)
@@ -112,16 +105,19 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
 
         # Build the summary message for the main portfolio data
         summary_msg = f"<b>Total Portfolio Value:</b> {format_usd(data.get('total_value_usd'))}\n\n"
+        
         native = data.get("native_pepu", {})
         summary_msg += f"<b>Wallet PEPU</b>\n"
         summary_msg += f"Amount: {format_amount(native.get('amount'))}\n"
         summary_msg += f"Price: {format_price(native.get('price_usd'))}\n"
         summary_msg += f"Total: {format_usd(native.get('total_usd'))}\n\n"
+        
         staked = data.get("staked_pepu", {})
         summary_msg += f"<b>Staked PEPU</b>\n"
         summary_msg += f"Amount: {format_amount(staked.get('amount'))}\n"
         summary_msg += f"Price: {format_price(staked.get('price_usd'))}\n"
         summary_msg += f"Total: {format_usd(staked.get('total_usd'))}\n\n"
+        
         rewards = data.get("unclaimed_rewards", {})
         summary_msg += f"<b>Unclaimed Rewards</b>\n"
         summary_msg += f"Amount: {format_amount(rewards.get('amount'))}\n"
@@ -130,16 +126,19 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
         
         await update.message.reply_text(summary_msg, parse_mode="HTML", disable_web_page_preview=True)
         
-        # Process tokens: filter tokens with amount >= 1 and total_usd >= 0.01
+        # Process tokens: include tokens with amount >= 1 and either total_usd >= 0.01,
+        # OR if their warning contains "Error fetching price data"
         tokens = [
             t for t in data.get("tokens", [])
-            if t.get("amount", 0) >= 1 and float(t.get("total_usd", 0)) >= 0.01
+            if t.get("amount", 0) >= 1 and (
+                float(t.get("total_usd", 0)) >= 0.01 or 
+                (t.get("warning") and "Error fetching price data" in t.get("warning"))
+            )
         ]
-        # Sort tokens by descending total USD
         tokens = sorted(tokens, key=lambda t: float(t.get("total_usd", 0)), reverse=True)
         
         if tokens:
-            chunk_size = 20  # Display 20 tokens per message
+            chunk_size = 20  # 20 tokens per message
             for i in range(0, len(tokens), chunk_size):
                 chunk = tokens[i:i+chunk_size]
                 if i == 0:
@@ -156,7 +155,7 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
                         warning_text = sanitize_html(token.get("warning"))
                         tokens_msg += f"<i>⚠ {warning_text}</i>\n"
                     tokens_msg += "\n"
-                # Append footer on the last tokens message
+                # Append footer only on the last tokens message
                 if i + chunk_size >= len(tokens):
                     tokens_msg += footer_text
                 await update.message.reply_text(tokens_msg, parse_mode="HTML", disable_web_page_preview=True)
