@@ -74,7 +74,6 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
     try:
         api_url = API_URL + wallet
         logger.debug("Requesting URL: %s", api_url)
-        # Increase timeout to 30 seconds for larger wallets
         response = requests.get(api_url, timeout=30)
         response.raise_for_status()  # Raise an error for non-200 responses
         data = response.json()
@@ -101,18 +100,21 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
         summary_msg += f"Price: {format_price(rewards.get('price_usd'))}\n"
         summary_msg += f"Total: {format_usd(rewards.get('total_usd'))}\n\n"
         
-        # Send the summary message
         await update.message.reply_text(summary_msg, parse_mode="HTML", disable_web_page_preview=True)
         
-        # Process tokens: filter tokens with amount >= 1 and sort descending by total_usd
-        tokens = [t for t in data.get("tokens", []) if t.get("amount", 0) >= 1]
+        # Process tokens: filter for tokens with amount >= 1 and total_usd >= 0.01
+        tokens = [
+            t for t in data.get("tokens", [])
+            if t.get("amount", 0) >= 1 and float(t.get("total_usd", 0)) >= 0.01
+        ]
+        # Sort tokens by 'total_usd' in descending order
         tokens = sorted(tokens, key=lambda t: float(t.get("total_usd", 0)), reverse=True)
         
         if tokens:
             chunk_size = 20  # 20 tokens per message
             for i in range(0, len(tokens), chunk_size):
                 chunk = tokens[i:i+chunk_size]
-                # Only add the header on the first chunk
+                # Add header only for the first chunk
                 if i == 0:
                     tokens_msg = "<b>Other Tokens:</b>\n"
                 else:
