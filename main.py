@@ -5,7 +5,7 @@ import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Configure logging to see debug information
+# Configure logging to show debug output
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.DEBUG
 )
@@ -75,53 +75,51 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
         api_url = API_URL + wallet
         logger.debug("Requesting URL: %s", api_url)
         response = requests.get(api_url, timeout=10)
-        response.raise_for_status()  # Raise error for non-200 responses
+        response.raise_for_status()
         data = response.json()
         logger.debug("Received data: %s", data)
 
-        # Build the HTML message
-        msg = f"<b>Total Portfolio Value:</b> {format_usd(data.get('total_value_usd'))}\n\n"
-        
-        # Wallet PEPU section
+        # Build the summary message for the main portfolio data
+        summary_msg = f"<b>Total Portfolio Value:</b> {format_usd(data.get('total_value_usd'))}\n\n"
         native = data.get("native_pepu", {})
-        msg += f"<b>Wallet PEPU</b>\n"
-        msg += f"Amount: {format_amount(native.get('amount'))}\n"
-        msg += f"Price: {format_price(native.get('price_usd'))}\n"
-        msg += f"Total: {format_usd(native.get('total_usd'))}\n\n"
-        
-        # Staked PEPU section
+        summary_msg += f"<b>Wallet PEPU</b>\n"
+        summary_msg += f"Amount: {format_amount(native.get('amount'))}\n"
+        summary_msg += f"Price: {format_price(native.get('price_usd'))}\n"
+        summary_msg += f"Total: {format_usd(native.get('total_usd'))}\n\n"
         staked = data.get("staked_pepu", {})
-        msg += f"<b>Staked PEPU</b>\n"
-        msg += f"Amount: {format_amount(staked.get('amount'))}\n"
-        msg += f"Price: {format_price(staked.get('price_usd'))}\n"
-        msg += f"Total: {format_usd(staked.get('total_usd'))}\n\n"
-        
-        # Unclaimed Rewards section
+        summary_msg += f"<b>Staked PEPU</b>\n"
+        summary_msg += f"Amount: {format_amount(staked.get('amount'))}\n"
+        summary_msg += f"Price: {format_price(staked.get('price_usd'))}\n"
+        summary_msg += f"Total: {format_usd(staked.get('total_usd'))}\n\n"
         rewards = data.get("unclaimed_rewards", {})
-        msg += f"<b>Unclaimed Rewards</b>\n"
-        msg += f"Amount: {format_amount(rewards.get('amount'))}\n"
-        msg += f"Price: {format_price(rewards.get('price_usd'))}\n"
-        msg += f"Total: {format_usd(rewards.get('total_usd'))}\n\n"
+        summary_msg += f"<b>Unclaimed Rewards</b>\n"
+        summary_msg += f"Amount: {format_amount(rewards.get('amount'))}\n"
+        summary_msg += f"Price: {format_price(rewards.get('price_usd'))}\n"
+        summary_msg += f"Total: {format_usd(rewards.get('total_usd'))}\n\n"
         
-        # Other tokens section
-        tokens = data.get("tokens", [])
+        await update.message.reply_text(summary_msg, parse_mode="HTML", disable_web_page_preview=True)
+        
+        # Process and sort tokens (only include tokens with an amount >= 1)
+        tokens = [t for t in data.get("tokens", []) if t.get("amount", 0) >= 1]
+        # Sort tokens by 'total_usd' in descending order
+        tokens = sorted(tokens, key=lambda t: float(t.get("total_usd", 0)), reverse=True)
+        
         if tokens:
-            msg += "<b>Other Tokens:</b>\n"
-            for token in tokens:
-                if token.get("amount", 0) < 1:
-                    continue
-                token_link = f"https://www.geckoterminal.com/pepe-unchained/pools/{token.get('contract')}"
-                msg += f"<b><a href=\"{token_link}\">{token.get('name')} ({token.get('symbol')})</a></b>\n"
-                # Removed the icon link line; no longer displaying icons inline.
-                msg += f"Amount: {format_amount(token.get('amount'))}\n"
-                msg += f"Price: {format_price(token.get('price_usd'))}\n"
-                msg += f"Total: {format_usd(token.get('total_usd'))}\n"
-                if token.get("warning"):
-                    warning_text = sanitize_html(token.get("warning"))
-                    msg += f"<i>⚠ {warning_text}</i>\n"
-                msg += "\n"
-
-        await update.message.reply_text(msg, parse_mode="HTML", disable_web_page_preview=True)
+            chunk_size = 20  # 20 tokens per message
+            for i in range(0, len(tokens), chunk_size):
+                chunk = tokens[i:i+chunk_size]
+                tokens_msg = f"<b>Other Tokens (Tokens {i+1} to {i+len(chunk)}):</b>\n"
+                for token in chunk:
+                    token_link = f"https://www.geckoterminal.com/pepe-unchained/pools/{token.get('contract')}"
+                    tokens_msg += f"<b><a href=\"{token_link}\">{token.get('name')} ({token.get('symbol')})</a></b>\n"
+                    tokens_msg += f"Amount: {format_amount(token.get('amount'))}\n"
+                    tokens_msg += f"Price: {format_price(token.get('price_usd'))}\n"
+                    tokens_msg += f"Total: {format_usd(token.get('total_usd'))}\n"
+                    if token.get("warning"):
+                        warning_text = sanitize_html(token.get("warning"))
+                        tokens_msg += f"<i>⚠ {warning_text}</i>\n"
+                    tokens_msg += "\n"
+                await update.message.reply_text(tokens_msg, parse_mode="HTML", disable_web_page_preview=True)
     except Exception as e:
         await update.message.reply_text("Error fetching data.", parse_mode="HTML")
         logger.error("Error fetching data: %s", e)
