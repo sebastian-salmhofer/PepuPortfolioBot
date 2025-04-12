@@ -12,6 +12,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Global advertisement configuration
 portfolio_request_count = 0
 next_ad_trigger = random.randint(3, 5)
 
@@ -29,11 +30,15 @@ ad_messages = [
 ]
 
 footer_text = "<b>Check out your portfolio on the web + explore exclusive merch</b> 🛍️\n🔗 pepe-bitcoin.com"
+
+# In-memory cache for user's last wallet address
 user_last_wallet = {}
 
+# Your API endpoint
 API_URL = "https://pepu-portfolio-tracker.onrender.com/portfolio?wallet="
 
 def sanitize_html(text):
+    """Remove unsupported HTML tags (e.g. <font> tags) from text."""
     if not text:
         return text
     return re.sub(r'</?font[^>]*>', '', text)
@@ -63,12 +68,6 @@ def format_price(n):
     except (ValueError, TypeError):
         return "N/A"
 
-def extract_symbols(lp_name):
-    match = re.search(r'- ([^/-]+)/([^ -]+)', lp_name)
-    if match:
-        return match.group(1), match.group(2)
-    return "?", "?"
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id in user_last_wallet:
@@ -91,6 +90,7 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
 
     await update.message.reply_text("Fetching data, please wait...", parse_mode="HTML")
 
+    # Increment portfolio request count and send an ad every 3-5 requests
     portfolio_request_count += 1
     if portfolio_request_count >= next_ad_trigger:
         ad_message = random.choice(ad_messages)
@@ -104,24 +104,32 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
         response.raise_for_status()
         data = response.json()
 
+        # Build summary message with a headline
         summary_msg = "🐸 <b>PepeBitcoin's PEPU Portfolio Tracker</b> 🐸\n\n"
         summary_msg += f"<b>Total Portfolio Value:</b> {format_usd(data.get('total_value_usd'))}\n\n"
         
         native = data.get("native_pepu", {})
-        summary_msg += f"<b>Wallet PEPU</b>\nAmount: {format_amount(native.get('amount'))}\n"
-        summary_msg += f"Price: {format_price(native.get('price_usd'))}\nTotal: {format_usd(native.get('total_usd'))}\n\n"
+        summary_msg += f"<b>Wallet PEPU</b>\n"
+        summary_msg += f"Amount: {format_amount(native.get('amount'))}\n"
+        summary_msg += f"Price: {format_price(native.get('price_usd'))}\n"
+        summary_msg += f"Total: {format_usd(native.get('total_usd'))}\n\n"
         
         staked = data.get("staked_pepu", {})
-        summary_msg += f"<b>Staked PEPU</b>\nAmount: {format_amount(staked.get('amount'))}\n"
-        summary_msg += f"Price: {format_price(staked.get('price_usd'))}\nTotal: {format_usd(staked.get('total_usd'))}\n\n"
+        summary_msg += f"<b>Staked PEPU</b>\n"
+        summary_msg += f"Amount: {format_amount(staked.get('amount'))}\n"
+        summary_msg += f"Price: {format_price(staked.get('price_usd'))}\n"
+        summary_msg += f"Total: {format_usd(staked.get('total_usd'))}\n\n"
         
         rewards = data.get("unclaimed_rewards", {})
-        summary_msg += f"<b>Unclaimed Rewards</b>\nAmount: {format_amount(rewards.get('amount'))}\n"
-        summary_msg += f"Price: {format_price(rewards.get('price_usd'))}\nTotal: {format_usd(rewards.get('total_usd'))}\n\n"
-
+        summary_msg += f"<b>Unclaimed Rewards</b>\n"
+        summary_msg += f"Amount: {format_amount(rewards.get('amount'))}\n"
+        summary_msg += f"Price: {format_price(rewards.get('price_usd'))}\n"
+        summary_msg += f"Total: {format_usd(rewards.get('total_usd'))}\n\n"
+        
         await update.message.reply_text(summary_msg, parse_mode="HTML", disable_web_page_preview=True)
-
-        # Tokens
+        
+        # Process tokens: include tokens with amount >= 1 and either total_usd >= 0.01 OR
+        # if a warning indicates "Error fetching price data"
         tokens = [
             t for t in data.get("tokens", [])
             if t.get("amount", 0) >= 1 and (
@@ -130,12 +138,15 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
             )
         ]
         tokens = sorted(tokens, key=lambda t: float(t.get("total_usd", 0)), reverse=True)
-
+        
         if tokens:
-            chunk_size = 20
+            chunk_size = 20  # 20 tokens per message
             for i in range(0, len(tokens), chunk_size):
                 chunk = tokens[i:i+chunk_size]
-                tokens_msg = "<b>Other Tokens:</b>\n" if i == 0 else ""
+                if i == 0:
+                    tokens_msg = "<b>Other Tokens:</b>\n"
+                else:
+                    tokens_msg = ""
                 for token in chunk:
                     token_link = f"https://www.geckoterminal.com/pepe-unchained/pools/{token.get('contract')}"
                     tokens_msg += f"<b><a href=\"{token_link}\">{token.get('name')} ({token.get('symbol')})</a></b>\n"
@@ -146,45 +157,9 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
                         warning_text = sanitize_html(token.get("warning"))
                         tokens_msg += f"<i>⚠ {warning_text}</i>\n"
                     tokens_msg += "\n"
-                if i + chunk_size >= len(tokens) and not data.get("lp_positions"):
+                if i + chunk_size >= len(tokens):
                     tokens_msg += footer_text
                 await update.message.reply_text(tokens_msg, parse_mode="HTML", disable_web_page_preview=True)
-
-        # Process LP positions
-        try:
-            lp_positions = data.get("lp_positions", [])
-            if lp_positions:
-                lp_msg = "<b>Liquidity Pool Positions:</b>\n\n"
-                for lp in lp_positions:
-                    lp_name = lp.get("lp_name", "Unknown LP")
-                    total_usd = float(lp.get("amount0_usd", 0)) + float(lp.get("amount1_usd", 0))
-
-                    # Extract symbols from lp_name
-                    symbol0, symbol1 = "?", "?"
-                    try:
-                        parts = lp_name.split(" - ")
-                        if len(parts) >= 3 and "/" in parts[2]:
-                            symbol1, symbol0 = parts[2].split("/")
-                    except:
-                        pass
-
-                    lp_msg += f"<b>{lp_name}</b>\n"
-                    lp_msg += f"{symbol0}: {format_amount(lp.get('amount0'))}\n"
-                    lp_msg += f"{symbol1}: {format_amount(lp.get('amount1'))}\n"
-                    lp_msg += f"<b>Total:</b> {format_usd(total_usd)}\n"
-                    if lp.get("warning"):
-                        lp_msg += f"<i>⚠ {sanitize_html(lp.get('warning'))}</i>\n"
-                    lp_msg += "\n"
-                
-                lp_msg += footer_text
-                await update.message.reply_text(lp_msg, parse_mode="HTML", disable_web_page_preview=True)
-            elif not tokens:
-                await update.message.reply_text(footer_text, parse_mode="HTML", disable_web_page_preview=True)
-
-        except Exception as lp_error:
-            await update.message.reply_text("⚠ Error loading LP positions.", parse_mode="HTML")
-            logger.error("Error processing LP positions: %s", lp_error)
-
     except Exception as e:
         await update.message.reply_text("Error fetching data.", parse_mode="HTML")
         logger.error("Error fetching data: %s", e)
