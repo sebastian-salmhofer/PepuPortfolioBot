@@ -157,9 +157,39 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
                         warning_text = sanitize_html(token.get("warning"))
                         tokens_msg += f"<i>⚠ {warning_text}</i>\n"
                     tokens_msg += "\n"
-                if i + chunk_size >= len(tokens):
+                if i + chunk_size >= len(tokens) and not data.get("lp_positions"):
                     tokens_msg += footer_text
                 await update.message.reply_text(tokens_msg, parse_mode="HTML", disable_web_page_preview=True)
+
+                # Display LP Positions if any
+                lp_positions = data.get("lp_positions", [])
+                if lp_positions:
+                    lp_msg = "<b>Liquidity Pool Positions:</b>\n"
+                    for lp in lp_positions:
+                        lp_name = lp.get("lp_name", "Unknown LP")
+                        symbol_section = lp_name.split(" - ")[2] if " - " in lp_name and "/" in lp_name else ""
+                        token0_symbol, token1_symbol = ("?", "?")
+                        if "/" in symbol_section:
+                            parts = symbol_section.split("/")
+                            if len(parts) == 2:
+                                token0_symbol = parts[0].strip()
+                                token1_symbol = parts[1].split(" -")[0].strip()
+        
+                        amount0 = format_amount(lp.get("amount0", 0))
+                        amount1 = format_amount(lp.get("amount1", 0))
+                        total_usd = format_usd(lp.get("amount0_usd", 0) + lp.get("amount1_usd", 0))
+        
+                        lp_msg += f"\n<b>{lp_name}</b>\n"
+                        lp_msg += f"{token0_symbol}: {amount0}\n"
+                        lp_msg += f"{token1_symbol}: {amount1}\n"
+                        lp_msg += f"<b>Total:</b> {total_usd}\n"
+                        if lp.get("warning"):
+                            lp_msg += f"<i>⚠ {sanitize_html(lp.get('warning'))}</i>\n"
+        
+                    lp_msg += f"\n{footer_text}"
+                    await update.message.reply_text(lp_msg, parse_mode="HTML", disable_web_page_preview=True)
+
+    
     except Exception as e:
         await update.message.reply_text("Error fetching data.", parse_mode="HTML")
         logger.error("Error fetching data: %s", e)
