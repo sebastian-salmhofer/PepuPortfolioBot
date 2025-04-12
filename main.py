@@ -150,21 +150,40 @@ async def check_wallet(update: Update, context: ContextTypes.DEFAULT_TYPE, walle
                     tokens_msg += footer_text
                 await update.message.reply_text(tokens_msg, parse_mode="HTML", disable_web_page_preview=True)
 
-        # LP Positions
-        lp_positions = data.get("lp_positions", [])
-        if lp_positions:
-            lp_msg = "<b>Liquidity Pool Positions:</b>\n"
-            for lp in lp_positions:
-                symbol0, symbol1 = extract_symbols(lp.get("lp_name", ""))
-                lp_msg += f"\n<b>{lp.get('lp_name')}</b>\n"
-                lp_msg += f"{symbol0}: {format_amount(lp.get('amount0'))}\n"
-                lp_msg += f"{symbol1}: {format_amount(lp.get('amount1'))}\n"
-                total = lp.get("amount0_usd", 0) + lp.get("amount1_usd", 0)
-                lp_msg += f"<b>Total:</b> {format_usd(total)}\n"
-                if lp.get("warning"):
-                    lp_msg += f"<i>⚠ {sanitize_html(lp['warning'])}</i>\n"
-            lp_msg += "\n" + footer_text
-            await update.message.reply_text(lp_msg, parse_mode="HTML", disable_web_page_preview=True)
+        # Process LP positions
+        try:
+            lp_positions = data.get("lp_positions", [])
+            if lp_positions:
+                lp_msg = "<b>Liquidity Pool Positions:</b>\n\n"
+                for lp in lp_positions:
+                    lp_name = lp.get("lp_name", "Unknown LP")
+                    total_usd = float(lp.get("amount0_usd", 0)) + float(lp.get("amount1_usd", 0))
+
+                    # Extract symbols from lp_name
+                    symbol0, symbol1 = "?", "?"
+                    try:
+                        parts = lp_name.split(" - ")
+                        if len(parts) >= 3 and "/" in parts[2]:
+                            symbol1, symbol0 = parts[2].split("/")
+                    except:
+                        pass
+
+                    lp_msg += f"<b>{lp_name}</b>\n"
+                    lp_msg += f"{symbol0}: {format_amount(lp.get('amount0'))}\n"
+                    lp_msg += f"{symbol1}: {format_amount(lp.get('amount1'))}\n"
+                    lp_msg += f"<b>Total:</b> {format_usd(total_usd)}\n"
+                    if lp.get("warning"):
+                        lp_msg += f"<i>⚠ {sanitize_html(lp.get('warning'))}</i>\n"
+                    lp_msg += "\n"
+                
+                lp_msg += footer_text
+                await update.message.reply_text(lp_msg, parse_mode="HTML", disable_web_page_preview=True)
+            elif not tokens:
+                await update.message.reply_text(footer_text, parse_mode="HTML", disable_web_page_preview=True)
+
+        except Exception as lp_error:
+            await update.message.reply_text("⚠ Error loading LP positions.", parse_mode="HTML")
+            logger.error("Error processing LP positions: %s", lp_error)
 
     except Exception as e:
         await update.message.reply_text("Error fetching data.", parse_mode="HTML")
